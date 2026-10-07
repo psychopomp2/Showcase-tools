@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <?!= include('Stylesheet'); ?>
+</head>
+<body>
+  <div class="demo-banner">Demostración · todos los datos son ficticios</div>
+  <header class="app">
+    <h1><?= AUTOMATION.CENTER_NAME ?></h1>
+    <span class="sub">Gestión Clínica, Triaje y Trabajo Social</span>
+  </header>
+
+  <nav class="tabs">
+    <button data-view="ingreso" class="active">1 · Ingreso</button>
+    <button data-view="triaje">2 · Triaje / Agenda</button>
+    <button data-view="especialidad">3 · Mi área</button>
+    <button data-view="sesion">4 · Sesión clínica</button>
+    <button data-view="dashboard">5 · Buscador / Dashboard</button>
+    <button data-view="automatizaciones">6 · Automatizaciones</button>
+  </nav>
+
+  <main>
+    <!-- 1) INGRESO -->
+    <section id="view-ingreso" class="view active">
+      <div class="card">
+        <h2>Nuevo expediente (Ingreso)</h2>
+        <p class="hint">Registra a la persona una sola vez. Los campos con <span style="color:#9c2b22">*</span> son obligatorios.</p>
+        <div id="form-ingreso" class="grid"></div>
+        <div id="msg-ingreso"></div>
+        <div class="actions"><button class="primary" id="btn-ingreso">Guardar expediente</button></div>
+      </div>
+    </section>
+
+    <!-- 2) TRIAJE / AGENDA -->
+    <section id="view-triaje" class="view">
+      <div class="card">
+        <h2>Triaje y agenda</h2>
+        <p class="hint">Escribe el documento de identidad para cargar los datos (solo lectura) y agendar la cita con signos vitales. Al guardar se crea el evento en Calendar y se envía la confirmación por email.</p>
+        <div class="searchbar">
+          <input type="text" id="triaje-cedula" placeholder="Documento (ej. DEMO-0001-…)" onkeydown="if(event.key==='Enter')App.hidratar()">
+          <button class="primary" onclick="App.hidratar()">Cargar expediente</button>
+        </div>
+        <div id="triaje-demograficos"></div>
+      </div>
+      <div class="card" id="triaje-form-card" style="display:none">
+        <h2>Datos de la cita</h2>
+        <div id="form-triaje" class="grid"></div>
+        <div id="msg-triaje"></div>
+        <div class="actions"><button class="primary" id="btn-triaje">Guardar cita / triaje</button></div>
+      </div>
+    </section>
+
+    <!-- 3) MI ÁREA -->
+    <section id="view-especialidad" class="view">
+      <div class="card">
+        <h2>Mi área de trabajo</h2>
+        <p class="hint">Selecciona tu especialidad y la fecha para ver a las personas citadas. Desde la lista abres el registro de sesión (Nivel 2) con el caso ya cargado.</p>
+        <div class="filters">
+          <div class="field"><label class="fld">Área / especialidad</label><select id="esp-area"></select></div>
+          <div class="field"><label class="fld">Fecha</label><input type="date" id="esp-fecha"></div>
+          <div class="field" style="align-self:end"><button class="primary" onclick="App.cargarCitas()">Ver citados</button></div>
+        </div>
+        <div id="esp-list"></div>
+      </div>
+    </section>
+
+    <!-- 4) SESIÓN -->
+    <section id="view-sesion" class="view">
+      <div class="card">
+        <h2>Sesión clínica <span id="sesion-paciente"></span></h2>
+        <p class="hint">Encabezado de la sesión y eventos A-B-C. Al guardar se genera el informe en Google Docs, se archiva con su PDF en Drive y se envía por email.</p>
+        <label class="fld">ID del Caso <span class="req">*</span>
+          <input type="text" id="sesion-id-caso" placeholder="Pega el id_caso o llega desde Mi área">
+        </label>
+        <div id="form-sesion" class="grid" style="margin-top:14px"></div>
+      </div>
+      <div class="card">
+        <h2>Matriz A-B-C <span class="badge" id="evt-count">0 eventos</span></h2>
+        <p class="hint">Cada evento es una intervención puntual. El orden se asigna automáticamente.</p>
+        <div id="eventos-list"></div>
+        <button class="ghost" id="btn-add-evento">+ Agregar evento A-B-C</button>
+      </div>
+      <div id="msg-sesion"></div>
+      <div class="actions"><button class="primary" id="btn-sesion">Guardar sesión + eventos</button></div>
+    </section>
+
+    <!-- 5) DASHBOARD -->
+    <section id="view-dashboard" class="view">
+      <div class="card">
+        <h2>Buscador universal</h2>
+        <p class="hint">Busca por nombre, documento o id_caso.</p>
+        <div class="searchbar">
+          <input type="text" id="q" placeholder="Ej. Lucía, DEMO-0001…" onkeydown="if(event.key==='Enter')App.buscar()">
+          <button class="primary" onclick="App.buscar()">Buscar</button>
+        </div>
+        <div id="search-results"></div>
+      </div>
+      <div class="card">
+        <h2>Filtros cruzados</h2>
+        <div class="filters" id="filtros"></div>
+        <div class="actions"><button class="ghost" onclick="App.filtrar()">Aplicar filtros</button></div>
+        <div id="filter-results"></div>
+      </div>
+      <div class="card" id="card-360" style="display:none">
+        <h2>Vista 360° del caso</h2>
+        <div id="vista360"></div>
+      </div>
+    </section>
+
+    <!-- 6) AUTOMATIZACIONES (extensión demo) -->
+    <section id="view-automatizaciones" class="view">
+      <div class="card">
+        <h2>Bitácora de automatizaciones</h2>
+        <p class="hint">Cada email, evento de calendario, informe y PDF queda registrado aquí (hoja <code>automation_log</code>).</p>
+        <div class="actions"><button class="ghost" onclick="App.cargarLog()">Actualizar</button></div>
+        <div id="log-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <?!= include('JavaScript'); ?>
+</body>
+</html>

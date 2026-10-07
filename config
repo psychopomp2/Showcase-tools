@@ -1,0 +1,8 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[user]
+	name = psychopomp2
+	email = 255996159+psychopomp2@users.noreply.github.com

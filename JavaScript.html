@@ -1,0 +1,463 @@
+<script>
+/* ============================================================================
+   Client app.
+   - Table/field keys come from CFG.tables / CFG.fields, so a rename only
+     touches Config.gs on the backend.
+   - Forms are generated from the schema.
+   - [EXTENSIÓN DEMO] shows the automation results returned by the backend
+     and the automation log tab.
+   ========================================================================== */
+var App = (function () {
+
+  var CFG = null, T = null, F = null;
+  var eventoCount = 0;
+  var triajeCasoId = null;
+  var currentSessionKey = null;
+
+  // --- utilities -------------------------------------------------------------
+  function humanize(id) {
+    if (id === '' || id == null) return '—';
+    if (CFG && CFG.enumLabels && CFG.enumLabels[id]) return CFG.enumLabels[id];
+    return String(id).replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
+  function el(html) { var d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstChild; }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c]; }); }
+  function hoyLocal() { var d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+  function esSistema(f) { return f.pk || f.computedFrom || f.default === 'now' || f.autoIncrementPer; }
+
+  // --- one form field ----------------------------------------------------------
+  function buildField(field, prefix) {
+    var id = prefix + '__' + field.key;
+    var reqMark = field.required ? ' <span class="req">*</span>' : '';
+    var wrap = document.createElement('div');
+    wrap.className = 'field' + (field.type === 'text' || field.type === 'enum_array' ? ' full' : '');
+    var label = '<label class="fld" for="' + id + '">' + esc(field.label) + reqMark + '</label>';
+
+    if (field.type === 'enum') {
+      var opts = '<option value="">— seleccione —</option>' +
+        CFG.enums[field.enum].map(function (v) { return '<option value="' + esc(v) + '">' + esc(humanize(v)) + '</option>'; }).join('');
+      wrap.innerHTML = label + '<select id="' + id + '">' + opts + '</select>';
+    } else if (field.type === 'enum_array') {
+      var checks = CFG.enums[field.enum].map(function (v) {
+        return '<label><input type="checkbox" value="' + esc(v) + '"> ' + esc(humanize(v)) + '</label>'; }).join('');
+      wrap.innerHTML = '<label class="fld">' + esc(field.label) + reqMark + '</label><div class="checks" id="' + id + '">' + checks + '</div>';
+    } else if (field.type === 'boolean') {
+      wrap.innerHTML = '<label class="switch"><input type="checkbox" id="' + id + '"> ' + esc(field.label) + reqMark + '</label>';
+    } else if (field.type === 'text') {
+      wrap.innerHTML = label + '<textarea id="' + id + '"></textarea>';
+    } else if (field.type === 'integer' || field.type === 'decimal') {
+      wrap.innerHTML = label + '<input type="number"' + (field.type === 'decimal' ? ' step="0.01"' : '') + ' id="' + id + '">';
+    } else if (field.type === 'date') {
+      wrap.innerHTML = label + '<input type="date" id="' + id + '">';
+    } else if (field.type === 'time') {
+      wrap.innerHTML = label + '<input type="time" id="' + id + '">';
+    } else {
+      wrap.innerHTML = label + '<input type="text" id="' + id + '">';
+    }
+    return wrap;
+  }
+
+  function renderForm(schemaKey, containerId, prefix, skipKeys) {
+    var cont = document.getElementById(containerId);
+    cont.innerHTML = '';
+    CFG.schemas[schemaKey].forEach(function (field) {
+      if (esSistema(field)) return;
+      if (skipKeys && skipKeys.indexOf(field.key) !== -1) return;
+      cont.appendChild(buildField(field, prefix));
+    });
+  }
+
+  function collectForm(schemaKey, prefix, skipKeys) {
+    var data = {};
+    CFG.schemas[schemaKey].forEach(function (field) {
+      if (esSistema(field)) return;
+      if (skipKeys && skipKeys.indexOf(field.key) !== -1) return;
+      var node = document.getElementById(prefix + '__' + field.key);
+      if (!node) return;
+      if (field.type === 'boolean') data[field.key] = node.checked;
+      else if (field.type === 'enum_array')
+        data[field.key] = Array.prototype.slice.call(node.querySelectorAll('input[type=checkbox]:checked')).map(function (c) { return c.value; });
+      else if (field.type === 'integer') data[field.key] = node.value === '' ? null : parseInt(node.value, 10);
+      else if (field.type === 'decimal') data[field.key] = node.value === '' ? null : parseFloat(node.value);
+      else data[field.key] = node.value;
+    });
+    return data;
+  }
+
+  function showMsg(containerId, type, titulo, lista, extraHtml) {
+    var html = '<div class="msg ' + type + '"><strong>' + esc(titulo) + '</strong>';
+    if (lista && lista.length) html += '<ul>' + lista.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
+    document.getElementById(containerId).innerHTML = html + (extraHtml || '') + '</div>';
+  }
+
+  // [EXTENSIÓN DEMO] chips with the result of each automation step.
+  var AUTO_LABELS = { calendario: 'Calendar', email: 'Email', informe: 'Google Doc', pdf: 'PDF en Drive' };
+  function renderAuto(auto) {
+    if (!auto || auto.habilitado === false) return '';
+    return '<div class="auto">' + Object.keys(auto).map(function (k) {
+      var r = auto[k] || {};
+      var txt = (AUTO_LABELS[k] || k) + (r.ok ? ' ✓' : (r.omitido ? ' · omitido' : ' ✗'));
+      var link = r.enlace && /^https?:/.test(r.enlace) ? ' <a href="' + esc(r.enlace) + '" target="_blank">abrir</a>' : '';
+      return '<span class="' + (r.ok ? 'ok' : 'err') + '" title="' + esc(r.error || r.detalle || '') + '">' + esc(txt) + link + '</span>';
+    }).join('') + '</div>';
+  }
+
+  function activateView(name) {
+    document.querySelectorAll('nav.tabs button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === name); });
+    document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+    document.getElementById('view-' + name).classList.add('active');
+    if (name === 'automatizaciones') cargarLog();
+  }
+
+  function busy(btn, on, label) { btn.disabled = on; btn.textContent = on ? 'Guardando…' : label; }
+
+  // ========================================================================
+  // 1) INTAKE
+  // ========================================================================
+  function guardarIngreso() {
+    var data = collectForm(T.MASTER, 'ing');
+    var btn = document.getElementById('btn-ingreso');
+    busy(btn, true);
+    google.script.run
+      .withSuccessHandler(function (res) {
+        busy(btn, false, 'Guardar expediente');
+        if (res.ok) { showMsg('msg-ingreso', 'ok', 'Expediente creado. id_caso: ' + res.id_caso + ' · Edad: ' + res.edad, []); renderForm(T.MASTER, 'form-ingreso', 'ing'); }
+        else showMsg('msg-ingreso', 'err', 'No se pudo guardar:', res.errors);
+      })
+      .withFailureHandler(function (e) { busy(btn, false, 'Guardar expediente'); showMsg('msg-ingreso', 'err', 'Error del servidor:', [e.message]); })
+      .api_crearIngreso(data);
+  }
+
+  // ========================================================================
+  // 2) TRIAGE / SCHEDULING
+  // ========================================================================
+  function hidratar() {
+    var cedula = document.getElementById('triaje-cedula').value.trim();
+    var cont = document.getElementById('triaje-demograficos');
+    triajeCasoId = null;
+    document.getElementById('triaje-form-card').style.display = 'none';
+    if (!cedula) { cont.innerHTML = ''; return; }
+    cont.innerHTML = '<p class="hint">Buscando expediente…</p>';
+
+    google.script.run.withSuccessHandler(function (res) {
+      if (!res.encontrado) { cont.innerHTML = '<div class="msg warn"><strong>No existe expediente con ese documento.</strong> Regístralo primero en Ingreso.</div>'; return; }
+      var h = res.expediente;
+      triajeCasoId = h[F.MASTER.PK];
+      var ro = function (lbl, val) { return '<div class="field"><label class="fld">' + esc(lbl) + '</label><input type="text" value="' + esc(val) + '" disabled></div>'; };
+      cont.innerHTML =
+        '<div class="msg ok"><strong>Expediente cargado:</strong> ' + esc(h[F.MASTER.NOMBRE]) + ' (id_caso ' + esc(h[F.MASTER.PK]) + ')</div>' +
+        '<div class="grid">' +
+          ro('Nombres', h[F.MASTER.NOMBRE]) + ro('Documento', h[F.MASTER.CEDULA]) +
+          ro('Edad', h[F.MASTER.EDAD]) + ro('Género / Identidad', humanize(h[F.MASTER.GENERO])) +
+          ro('Diagnóstico base', h[F.MASTER.DIAGNOSTICO]) + ro('Representante legal', h.nombre_representante_legal) +
+          ro('Teléfono', h.telefono_principal) + ro('Dirección / Barrio', h.direccion_barrio) +
+        '</div>';
+      renderForm(T.AGENDA, 'form-triaje', 'tri', [F.AGENDA.FK_MASTER]);
+      document.getElementById('triaje-form-card').style.display = 'block';
+    }).withFailureHandler(function (e) { cont.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; })
+      .api_hidratarPorCedula(cedula);
+  }
+
+  function guardarTriaje() {
+    if (!triajeCasoId) { showMsg('msg-triaje', 'err', 'Primero carga un expediente por documento.', []); return; }
+    var data = collectForm(T.AGENDA, 'tri', [F.AGENDA.FK_MASTER]);
+    data[F.AGENDA.FK_MASTER] = triajeCasoId;
+    var btn = document.getElementById('btn-triaje');
+    busy(btn, true);
+    google.script.run
+      .withSuccessHandler(function (res) {
+        busy(btn, false, 'Guardar cita / triaje');
+        if (res.ok) {
+          showMsg('msg-triaje', 'ok', 'Cita/triaje guardado (id_agenda: ' + res.id_agenda + ').', res.avisos || [], renderAuto(res.automatizacion));
+          renderForm(T.AGENDA, 'form-triaje', 'tri', [F.AGENDA.FK_MASTER]);
+        } else showMsg('msg-triaje', 'err', 'No se pudo guardar:', res.errors);
+      })
+      .withFailureHandler(function (e) { busy(btn, false, 'Guardar cita / triaje'); showMsg('msg-triaje', 'err', 'Error del servidor:', [e.message]); })
+      .api_crearTriaje(data);
+  }
+
+  // ========================================================================
+  // 3) MY AREA — people scheduled today (actionable list)
+  // ========================================================================
+  function cargarCitas() {
+    var area = document.getElementById('esp-area').value;
+    var fecha = document.getElementById('esp-fecha').value || hoyLocal();
+    var cont = document.getElementById('esp-list');
+    cont.innerHTML = '<p class="hint">Cargando agenda…</p>';
+    google.script.run.withSuccessHandler(function (rows) { renderCitas(rows, area); })
+      .withFailureHandler(function (e) { cont.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; })
+      .api_citasDelDia(area, fecha);
+  }
+
+  function renderCitas(rows, area) {
+    var cont = document.getElementById('esp-list');
+    if (!rows || !rows.length) { cont.innerHTML = '<p class="hint">No hay personas citadas para esa área y fecha.</p>'; return; }
+    var estados = CFG.enums.estado_cita;
+    var filas = rows.map(function (r) {
+      var sel = '<select class="sel-estado" data-id-agenda="' + esc(r.id_agenda) + '">' +
+        estados.map(function (e) { return '<option value="' + esc(e) + '"' + (e === r.estado_cita ? ' selected' : '') + '>' + esc(humanize(e)) + '</option>'; }).join('') + '</select>';
+      var btn = '<button class="primary btn-registrar" data-id-caso="' + esc(r.id_caso) + '" data-nombre="' + esc(r.nombres_nna) + '">Registrar sesión</button>';
+      return '<tr><td>' + esc(r.hora_cita) + '</td><td>' + esc(r.nombres_nna) + '</td><td>' + esc(r.cedula_nna) + '</td><td>' + sel + '</td><td>' + btn + '</td></tr>';
+    }).join('');
+    cont.innerHTML = '<div class="table-wrap"><table class="res"><thead><tr><th>Hora</th><th>Persona</th><th>Documento</th><th>Estado</th><th>Acción</th></tr></thead><tbody>' + filas + '</tbody></table></div><div id="msg-estado"></div>';
+
+    cont.querySelectorAll('.btn-registrar').forEach(function (b) {
+      b.addEventListener('click', function () { registrarSesion(b.dataset.idCaso, area, b.dataset.nombre); });
+    });
+    cont.querySelectorAll('.sel-estado').forEach(function (s) {
+      s.addEventListener('change', function () { cambiarEstado(s.dataset.idAgenda, s.value); });
+    });
+  }
+
+  function cambiarEstado(idAgenda, nuevoEstado) {
+    google.script.run.withSuccessHandler(function (res) {
+      if (!res.ok) showMsg('msg-estado', 'err', 'No se pudo actualizar el estado:', res.errors || []);
+      else showMsg('msg-estado', 'ok', 'Estado actualizado: ' + humanize(nuevoEstado), []);
+    }).withFailureHandler(function (e) { showMsg('msg-estado', 'err', 'Error:', [e.message]); })
+      .api_actualizarEstadoCita(idAgenda, nuevoEstado);
+  }
+
+  function registrarSesion(idCaso, area, nombre) {
+    currentSessionKey = (CFG.areaSessionForm && CFG.areaSessionForm[area]) || T.SESSION;
+    activateView('sesion');
+    renderSesionForm(currentSessionKey, area);
+    document.getElementById('sesion-id-caso').value = idCaso;
+    document.getElementById('sesion-paciente').innerHTML = '<span class="pill">' + esc(nombre) + ' · ' + esc(humanize(area)) + '</span>';
+    document.getElementById('eventos-list').innerHTML = '';
+    addEvento();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showMsg('msg-sesion', 'ok', 'Caso cargado desde Mi área. Completa y guarda la sesión.', []);
+  }
+
+  // ========================================================================
+  // 4) SESSION + A-B-C MATRIX
+  // ========================================================================
+  function renderSesionForm(schemaKey, lockArea) {
+    renderForm(schemaKey, 'form-sesion', 'ses', [F.SESSION.FK_MASTER]);
+    if (lockArea) {
+      var areaSel = document.getElementById('ses__' + F.SESSION.AREA);
+      if (areaSel) { areaSel.value = lockArea; areaSel.disabled = true; }
+    }
+  }
+
+  function addEvento() {
+    eventoCount++;
+    var n = eventoCount;
+    var box = el('<div class="evento" id="evento-' + n + '">' +
+      '<div class="evento-head"><strong>Evento #' + n + '</strong>' +
+      '<button class="ghost" type="button" onclick="App.removeEvento(' + n + ')">Quitar</button></div>' +
+      '<div class="grid" id="evento-grid-' + n + '"></div></div>');
+    document.getElementById('eventos-list').appendChild(box);
+    var grid = document.getElementById('evento-grid-' + n);
+    CFG.schemas[T.MATRIX].forEach(function (field) {
+      if (esSistema(field) || field.key === F.MATRIX.FK_SESSION) return;
+      grid.appendChild(buildField(field, 'evt' + n));
+    });
+    updateEvtCount();
+  }
+  function removeEvento(n) { var node = document.getElementById('evento-' + n); if (node) node.remove(); updateEvtCount(); }
+  function updateEvtCount() {
+    var c = document.querySelectorAll('#eventos-list .evento').length;
+    document.getElementById('evt-count').textContent = c + (c === 1 ? ' evento' : ' eventos');
+  }
+
+  function guardarSesion() {
+    var idCaso = document.getElementById('sesion-id-caso').value.trim();
+    if (!idCaso) { showMsg('msg-sesion', 'err', 'Falta el ID del Caso.', []); return; }
+    var key = currentSessionKey || T.SESSION;
+    var sesion = collectForm(key, 'ses', [F.SESSION.FK_MASTER]);
+    sesion[F.SESSION.FK_MASTER] = idCaso;
+
+    var eventos = [];
+    document.querySelectorAll('#eventos-list .evento').forEach(function (node) {
+      var n = node.id.split('-')[1];
+      var ev = {};
+      CFG.schemas[T.MATRIX].forEach(function (field) {
+        if (esSistema(field) || field.key === F.MATRIX.FK_SESSION) return;
+        var node2 = document.getElementById('evt' + n + '__' + field.key);
+        if (node2) ev[field.key] = node2.value;
+      });
+      eventos.push(ev);
+    });
+
+    var btn = document.getElementById('btn-sesion');
+    busy(btn, true);
+    google.script.run
+      .withSuccessHandler(function (res) {
+        busy(btn, false, 'Guardar sesión + eventos');
+        if (res.ok) {
+          showMsg('msg-sesion', 'ok', 'Sesión guardada (id_sesion: ' + res.id_sesion + ') con ' + res.eventos.length + ' evento(s).', res.avisos || [], renderAuto(res.automatizacion));
+          document.getElementById('eventos-list').innerHTML = '';
+          document.getElementById('sesion-paciente').innerHTML = '';
+          document.getElementById('sesion-id-caso').value = '';
+          renderSesionForm(T.SESSION); currentSessionKey = T.SESSION; updateEvtCount();
+        } else showMsg('msg-sesion', 'err', 'No se pudo guardar:', res.errors);
+      })
+      .withFailureHandler(function (e) { busy(btn, false, 'Guardar sesión + eventos'); showMsg('msg-sesion', 'err', 'Error del servidor:', [e.message]); })
+      .api_crearSesionConEventos(sesion, eventos);
+  }
+
+  // ========================================================================
+  // 5) DASHBOARD
+  // ========================================================================
+  function buscar() {
+    var q = document.getElementById('q').value.trim();
+    var cont = document.getElementById('search-results');
+    cont.innerHTML = '<p class="hint">Buscando…</p>';
+    google.script.run.withSuccessHandler(function (rows) { renderTabla(cont, rows); })
+      .withFailureHandler(function (e) { cont.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; }).api_buscar(q);
+  }
+
+  function renderTabla(cont, rows) {
+    if (!rows || !rows.length) { cont.innerHTML = '<p class="hint">Sin resultados.</p>'; return; }
+    var body = rows.map(function (r) {
+      return '<tr class="clickable row-360" data-id-caso="' + esc(r.id_caso) + '"><td>' + esc(r.nombres_nna) + '</td><td>' + esc(r.cedula_nna) + '</td><td>' + esc(r.edad) + '</td><td>' + esc(r.diagnostico_base) + '</td></tr>';
+    }).join('');
+    cont.innerHTML = '<div class="table-wrap"><table class="res"><thead><tr><th>Nombre</th><th>Documento</th><th>Edad</th><th>Diagnóstico</th></tr></thead><tbody>' + body + '</tbody></table></div><p class="hint">Haz clic en una fila para ver la vista 360°.</p>';
+    cont.querySelectorAll('.row-360').forEach(function (tr) { tr.addEventListener('click', function () { ver360(tr.dataset.idCaso); }); });
+  }
+
+  function renderFiltros() {
+    var cont = document.getElementById('filtros');
+    var terapias = CFG.enums.terapias_solicitadas.map(function (t) { return '<label><input type="checkbox" class="f-terapia" value="' + t + '"> ' + esc(humanize(t)) + '</label>'; }).join('');
+    var generos = '<option value="">Todos</option>' + CFG.enums.genero_identidad.map(function (g) { return '<option value="' + g + '">' + esc(humanize(g)) + '</option>'; }).join('');
+    cont.innerHTML =
+      '<div class="field full"><label class="fld">Terapias (deben tenerlas todas)</label><div class="checks">' + terapias + '</div></div>' +
+      '<div class="field"><label class="fld">Género / Identidad</label><select id="f-genero">' + generos + '</select></div>' +
+      '<div class="field"><label class="fld">Diagnóstico contiene</label><input type="text" id="f-diag"></div>' +
+      '<div class="field"><label class="fld">Edad mín.</label><input type="number" id="f-emin"></div>' +
+      '<div class="field"><label class="fld">Edad máx.</label><input type="number" id="f-emax"></div>' +
+      '<div class="field"><label class="fld">Ingreso desde</label><input type="date" id="f-desde"></div>' +
+      '<div class="field"><label class="fld">Ingreso hasta</label><input type="date" id="f-hasta"></div>';
+  }
+
+  function filtrar() {
+    var num = function (id) { var v = document.getElementById(id).value; return v !== '' ? parseInt(v, 10) : null; };
+    var f = {
+      terapias_contains: Array.prototype.slice.call(document.querySelectorAll('.f-terapia:checked')).map(function (c) { return c.value; }),
+      genero_identidad: document.getElementById('f-genero').value || null,
+      diagnostico_base: document.getElementById('f-diag').value || null,
+      edad_min: num('f-emin'), edad_max: num('f-emax'),
+      fecha_desde: document.getElementById('f-desde').value || null,
+      fecha_hasta: document.getElementById('f-hasta').value || null
+    };
+    var cont = document.getElementById('filter-results');
+    cont.innerHTML = '<p class="hint">Filtrando…</p>';
+    google.script.run.withSuccessHandler(function (rows) {
+      renderTabla(cont, rows.map(function (r) { return { id_caso: r[F.MASTER.PK], nombres_nna: r[F.MASTER.NOMBRE], cedula_nna: r[F.MASTER.CEDULA], edad: r[F.MASTER.EDAD], diagnostico_base: r[F.MASTER.DIAGNOSTICO] }; }));
+    }).withFailureHandler(function (e) { cont.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; }).api_filtrar(f);
+  }
+
+  function ver360(id_caso) {
+    var card = document.getElementById('card-360'), cont = document.getElementById('vista360');
+    card.style.display = 'block'; card.scrollIntoView({ behavior: 'smooth' });
+    cont.innerHTML = '<p class="hint">Cargando…</p>';
+    google.script.run.withSuccessHandler(function (v) {
+      if (!v) { cont.innerHTML = '<div class="msg err">Caso no encontrado.</div>'; return; }
+      var h = v.header;
+      var terapias = (h[F.MASTER.TERAPIAS] || []).map(function (t) { return '<span class="pill">' + esc(humanize(t)) + '</span>'; }).join('') || '—';
+
+      var vitales = '<p class="hint">Sin triajes registrados.</p>';
+      if (v.ultimo_triaje) {
+        var t = v.ultimo_triaje;
+        var kv = function (k, val) { return '<div><b>' + k + '</b>' + esc(val) + '</div>'; };
+        vitales = '<div class="kv">' +
+          kv('Fecha cita', String(t[F.AGENDA.FECHA_CITA]).slice(0, 10) + ' ' + (t[F.AGENDA.HORA] || '')) +
+          kv('Estado', humanize(t[F.AGENDA.ESTADO])) + kv('Área admisión', humanize(t[F.AGENDA.AREA])) +
+          kv('Presión arterial', t.presion_arterial) + kv('FC', t.frecuencia_cardiaca_fc) + kv('FR', t.frecuencia_respiratoria_fr) +
+          kv('Talla (cm)', t.talla_cm) + kv('Peso (kg)', t.peso_kg) + kv('SatO₂ (%)', t.saturacion_oxigeno) + kv('Glicemia', t.glicemia) +
+          '</div>';
+      }
+
+      var resumen = v.resumen_clinico.map(function (s) {
+        return '<div class="evento"><div class="evento-head"><strong>' + esc(humanize(s.area_intervencion)) + '</strong>' +
+          '<span class="badge">' + esc(humanize(s.proposito_logrado)) + '</span></div>' +
+          'Acercamiento: ' + esc(humanize(s.acercamiento_inicial)) + ' · Última sesión: ' + esc(String(s.fecha_sesion).slice(0, 10)) + '</div>';
+      }).join('') || '<p class="hint">Sin sesiones registradas.</p>';
+
+      cont.innerHTML =
+        '<div class="kv">' +
+          '<div><b>Nombre</b>' + esc(h[F.MASTER.NOMBRE]) + '</div>' +
+          '<div><b>Documento</b>' + esc(h[F.MASTER.CEDULA]) + '</div>' +
+          '<div><b>Edad</b>' + esc(h[F.MASTER.EDAD]) + '</div>' +
+          '<div><b>Género</b>' + esc(humanize(h[F.MASTER.GENERO])) + '</div>' +
+          '<div><b>Diagnóstico base</b>' + esc(h[F.MASTER.DIAGNOSTICO]) + '</div>' +
+          '<div><b>Teléfono</b>' + esc(h.telefono_principal) + '</div>' +
+        '</div>' +
+        '<div style="margin:14px 0"><b style="font-size:11px;text-transform:uppercase;color:#5b665f">Terapias solicitadas</b><br>' + terapias + '</div>' +
+        '<h3 style="margin:18px 0 8px">Últimos signos vitales (triaje)</h3>' + vitales +
+        '<h3 style="margin:18px 0 8px">Resumen clínico (' + v.total_sesiones + ' sesiones)</h3>' + resumen +
+        '<h3 style="margin:18px 0 8px">Frecuencia de conductas observadas (B)</h3><div id="chart-b"></div>';
+
+      google.script.run.withSuccessHandler(function (conteo) { renderBarras('chart-b', conteo); })
+        .api_frecuencia(id_caso, F.MATRIX.CONDUCTA_B);
+    }).withFailureHandler(function (e) { cont.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; }).api_vista360(id_caso);
+  }
+
+  function renderBarras(containerId, conteo) {
+    var cont = document.getElementById(containerId);
+    var keys = Object.keys(conteo);
+    if (!keys.length) { cont.innerHTML = '<p class="hint">Aún no hay eventos en la matriz para este caso.</p>'; return; }
+    var max = Math.max.apply(null, keys.map(function (k) { return conteo[k]; }));
+    cont.innerHTML = keys.sort(function (a, b) { return conteo[b] - conteo[a]; }).map(function (k) {
+      var pct = Math.round((conteo[k] / max) * 100);
+      return '<div class="bar-row"><div class="lbl">' + esc(humanize(k)) + '</div><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div><div class="num">' + conteo[k] + '</div></div>';
+    }).join('');
+  }
+
+  // ========================================================================
+  // 6) [EXTENSIÓN DEMO] AUTOMATION LOG
+  // ========================================================================
+  function cargarLog() {
+    var cont = document.getElementById('log-list');
+    cont.innerHTML = '<p class="hint">Cargando…</p>';
+    google.script.run.withSuccessHandler(function (rows) {
+      if (!rows || !rows.length) { cont.innerHTML = '<p class="hint">Todavía no hay automatizaciones registradas.</p>'; return; }
+      var body = rows.map(function (r) {
+        var link = /^https?:/.test(r.enlace || '') ? '<a href="' + esc(r.enlace) + '" target="_blank">abrir</a>' : '';
+        return '<tr><td>' + esc(String(r.marca).replace('T', ' ').slice(0, 16)) + '</td><td>' + esc(humanize(r.tipo)) + '</td><td>' +
+               esc(humanize(r.resultado)) + '</td><td>' + esc(r.detalle) + '</td><td>' + link + '</td></tr>';
+      }).join('');
+      cont.innerHTML = '<div class="table-wrap"><table class="res"><thead><tr><th>Cuándo (UTC)</th><th>Tipo</th><th>Resultado</th><th>Detalle</th><th></th></tr></thead><tbody>' + body + '</tbody></table></div>';
+    }).withFailureHandler(function (e) { cont.innerHTML = '<div class="msg err">' + esc(e.message) + '</div>'; }).api_automationLog(30);
+  }
+
+  // --- navigation + boot -------------------------------------------------------
+  function initNav() {
+    document.querySelectorAll('nav.tabs button').forEach(function (btn) {
+      btn.addEventListener('click', function () { activateView(btn.dataset.view); });
+    });
+    document.getElementById('btn-ingreso').addEventListener('click', guardarIngreso);
+    document.getElementById('btn-triaje').addEventListener('click', guardarTriaje);
+    document.getElementById('btn-sesion').addEventListener('click', guardarSesion);
+    document.getElementById('btn-add-evento').addEventListener('click', addEvento);
+  }
+
+  function initEspecialidad() {
+    var sel = document.getElementById('esp-area');
+    sel.innerHTML = CFG.enums.area_intervencion.map(function (a) { return '<option value="' + a + '">' + esc(humanize(a)) + '</option>'; }).join('');
+    document.getElementById('esp-fecha').value = hoyLocal();
+  }
+
+  function init() {
+    google.script.run.withSuccessHandler(function (cfg) {
+      CFG = cfg; T = cfg.tables; F = cfg.fields;
+      currentSessionKey = T.SESSION;
+      renderForm(T.MASTER, 'form-ingreso', 'ing');
+      renderSesionForm(T.SESSION);
+      renderFiltros();
+      initEspecialidad();
+      addEvento();
+      initNav();
+    }).withFailureHandler(function (e) {
+      document.querySelector('main').innerHTML = '<div class="msg err">No se pudo cargar la configuración: ' + esc(e.message) + '</div>';
+    }).api_getFormConfig();
+  }
+
+  return { init: init, hidratar: hidratar, cargarCitas: cargarCitas, buscar: buscar, filtrar: filtrar,
+           ver360: ver360, addEvento: addEvento, removeEvento: removeEvento, cargarLog: cargarLog };
+})();
+
+window.addEventListener('DOMContentLoaded', App.init);
+</script>

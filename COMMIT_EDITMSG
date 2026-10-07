@@ -1,0 +1,7 @@
+Clinic case pipeline: Apps Script case management with Gmail, Calendar, Docs and Drive automation
+
+Demo rebuild with synthetic data. Core modules mirror the original system;
+the automation layer, demo data seeder and local test harness are new.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GmSe8ojwVVXH4XG2xqcCFQ
