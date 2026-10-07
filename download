@@ -1,1 +1,6 @@
-**/*.md
+out/
+__pycache__/
+*.pyc
+.venv/
+*.db
+.pytest_cache/

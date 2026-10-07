@@ -1,0 +1,39 @@
+# Example configuration. Every number here is a placeholder for the demo,
+# not anyone's real pricing or dispatch policy. Tune it to your operation.
+
+[general]
+company_name = "Example Dispatch Co."
+db_path = "out/dispatch.db"
+report_dir = "out/reports"
+
+[matching]
+max_empty_miles = 150        # farthest a driver may deadhead to pickup
+avg_speed_mph = 50           # to check the driver can reach pickup on time
+target_rate_per_mile = 3.0   # offered rate/mile that earns a full rate score
+weight_distance = 0.5        # score weights, must add up to 1.0
+weight_rate = 0.3
+weight_preference = 0.2
+
+[pricing]
+base_fee = 100
+per_loaded_mile = 2.0
+per_empty_mile = 0.5
+minimum_charge = 250
+driver_share = 0.75
+road_factor = 1.18           # straight-line -> road miles estimate
+
+[documents]
+required = ["license", "insurance", "registration"]
+warn_days_before_expiry = 30
+
+[notify]
+dry_run = true               # nothing leaves the machine until this is false
+channels = ["console"]       # any of: console, email, webhook
+outbox_dir = "out/outbox"
+dispatcher_email = "dispatcher@example.org"
+from_address = "dispatch@example.org"
+smtp_host = ""               # e.g. smtp.gmail.com; credentials come from env vars below
+smtp_port = 587
+smtp_user_env = "DISPATCH_SMTP_USER"
+smtp_password_env = "DISPATCH_SMTP_PASSWORD"
+webhook_url = ""             # e.g. a Slack/Teams/WhatsApp-gateway incoming webhook
