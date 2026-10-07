@@ -1,0 +1,8 @@
+load_id,origin,origin_lat,origin_lon,destination,dest_lat,dest_lon,pickup_at,weight_lbs,equipment,offered_rate
+L100,Atlanta GA,33.749,-84.388,Charlotte NC,35.227,-80.843,2026-10-08 10:00,1800,cargo van,950
+L101,Charlotte NC,35.227,-80.843,Columbia SC,34.000,-81.035,2026-10-08 09:00,2200,cargo van,520
+L102,Nashville TN,36.162,-86.781,Chattanooga TN,35.046,-85.310,2026-10-08 12:00,7500,box truck,
+L103,Jacksonville FL,30.332,-81.656,Orlando FL,28.538,-81.379,2026-10-08 11:00,1200,cargo van,700
+L104,Birmingham AL,33.519,-86.810,Macon GA,32.840,-83.632,2026-10-08 09:30,2000,cargo van,780
+L105,Memphis TN,35.149,-90.049,Knoxville TN,35.960,-83.920,2026-10-08 08:00,1500,cargo van,1400
+L106,Savannah GA,32.081,-81.091,Atlanta GA,33.749,-84.388,2026-10-08 13:00,30000,flatbed,1100

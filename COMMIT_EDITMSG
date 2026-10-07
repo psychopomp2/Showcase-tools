@@ -1,7 +1,6 @@
-Clinic case pipeline: Apps Script case management with Gmail, Calendar, Docs and Drive automation
+Dispatch pipeline: ingest, document checks, matching, quoting, notifications, audit and reports
 
-Demo rebuild with synthetic data. Core modules mirror the original system;
-the automation layer, demo data seeder and local test harness are new.
+Stdlib-only Python with invented sample data and placeholder rates.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01GmSe8ojwVVXH4XG2xqcCFQ

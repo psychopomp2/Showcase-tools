@@ -1,1 +1,1 @@
-0000000000000000000000000000000000000000 119b42d7351151aa2162971a7bf7cbd6094714af psychopomp2 <255996159+psychopomp2@users.noreply.github.com> 1791317699 -0500	commit (initial): Clinic case pipeline: Apps Script case management with Gmail, Calendar, Docs and Drive automation
+0000000000000000000000000000000000000000 19d5f8985acc5f346af63f46a76b6880d1a636d0 psychopomp2 <255996159+psychopomp2@users.noreply.github.com> 1791317699 -0500	commit (initial): Dispatch pipeline: ingest, document checks, matching, quoting, notifications, audit and reports

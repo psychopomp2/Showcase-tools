@@ -1,0 +1,10 @@
+driver_id,name,phone,email,equipment,capacity_lbs,lat,lon,available_from,preferred_max_miles
+D001,ana ruiz,(555) 010-0001,ana.ruiz@example.org,Cargo Van,3000,33.760,-84.400,2026-10-08 06:00,600
+D002,ben carter,555.010.0002,,cargo van,3500,35.230,-80.850,2026-10-08 05:00,
+D003,carla diaz,5550100003,carla.diaz@example.org,box truck,10000,36.160,-86.780,2026-10-08 07:00,400
+D004,dev patel,555-010-0004,dev.patel@example.org,cargo van,3000,30.330,-81.660,2026-10-08 08:00,300
+D005,elena moss,555 010 0005,elena.moss@example.org,cargo-van,2500,33.520,-86.810,2026-10-08 06:30,
+D006,frank odum,555-010-0006,frank.odum@example.org,flatbed,40000,32.080,-81.090,2026-10-08 06:00,
+D007,gia park,,not-an-email,cargo van,3000,28.540,-81.380,2026-10-08 06:00,
+D002,ben carter duplicate,555-010-0099,,cargo van,3500,35.230,-80.850,2026-10-08 05:00,
+D008,hal ito,555-010-0008,hal.ito@example.org,cargo van,3000,35.150,-90.050,2026-10-09 18:00,

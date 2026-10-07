@@ -1,0 +1,20 @@
+[project]
+name = "dispatch-pipeline"
+version = "0.1.0"
+description = "Configurable driver-to-load dispatch pipeline: ingest, document checks, matching, quoting, notifications, audit trail and reports."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+ocr = ["pytesseract", "Pillow"]
+test = ["pytest"]
+
+[project.scripts]
+dispatch-pipeline = "dispatch_pipeline.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["dispatch_pipeline"]
